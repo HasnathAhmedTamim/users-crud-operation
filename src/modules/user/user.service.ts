@@ -2,12 +2,10 @@ import { pool } from "../../db";
 import type { IUser } from "./user.interface";
 import bcrypt from "bcryptjs";
 
-// const removePassword = (user: any) => {
-//   if (!user) return user;
-
-//   delete user.password;
-//   return user;
-// };
+const omitPassword = <T extends { password?: string }>(user: T) => {
+  const { password, ...safeUser } = user;
+  return safeUser;
+};
 
 const createUserIntoDB = async (payload: IUser) => {
   const { name, email, password, age } = payload;
@@ -21,7 +19,7 @@ const createUserIntoDB = async (payload: IUser) => {
     [name, email, hashedPassword, age],
   );
 
-  delete result.rows[0].password; // Remove password from the result before returning
+  result.rows = result.rows.map(omitPassword);
 
   return result;
 };
@@ -31,7 +29,7 @@ const getAllUsersFromDB = async () => {
       SELECT * FROM users
     `);
 
-  delete result.rows[0].password;
+  result.rows = result.rows.map(omitPassword);
 
   return result;
 };
@@ -45,7 +43,8 @@ const getSingleUserFromDB = async (id: string) => {
     [id],
   );
 
-  delete result.rows[0].password;
+  result.rows = result.rows.map(omitPassword);
+
   return result;
 };
 
@@ -58,6 +57,8 @@ const deleteUserFromDB = async (id: string) => {
       `,
     [id],
   );
+
+  result.rows = result.rows.map(omitPassword);
 
   return result;
 };
@@ -77,7 +78,9 @@ const updateUserInDB = async (payload: IUser, id: string) => {
       `,
     [name, hashedPassword, age, is_active, id],
   );
-  delete result.rows[0].password;
+
+  result.rows = result.rows.map(omitPassword);
+
   return result;
 };
 
