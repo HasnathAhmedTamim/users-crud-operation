@@ -38,6 +38,7 @@ const loginUserIntoDB = async (payload: IAuth) => {
   const jwtpayload = {
     id: user.id,
     name: user.name,
+    role: user.role,
     is_active: user.is_active,
     email: user.email,
   };
@@ -90,6 +91,7 @@ const registerUserIntoDB = async (payload: IRegister) => {
     name: user.name,
     email: user.email,
     is_active: user.is_active,
+    role: user.role,
   };
 
   const accessToken = jwt.sign(jwtPayload, config.secretKey as string, {

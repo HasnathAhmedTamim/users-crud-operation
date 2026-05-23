@@ -7,11 +7,16 @@ import {
 import { pool } from "../../db";
 import { userController } from "./user.controller";
 import auth from "../middleware/auth";
+import { USER_ROLE } from "../../types";
 
 const router = Router();
 
 router.post("/", userController.createUser); // Create User
-router.get("/", auth(), userController.getAllUsers); // Get All Users
+router.get(
+  "/",
+  auth(USER_ROLE.admin, USER_ROLE.agent, USER_ROLE.user),
+  userController.getAllUsers,
+); // Get All Users
 router.get("/:id", userController.getSingleUser); // Get User by ID
 router.put("/:id", userController.updateUser); // Update User by ID
 router.delete("/:id", userController.deleteUser); // Delete User by ID

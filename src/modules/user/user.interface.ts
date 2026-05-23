@@ -4,4 +4,6 @@ export interface IUser {
   password: string;
   age: number;
   is_active?: boolean;
+  // add role admin , user , agent task
+  role?: string;
 }
