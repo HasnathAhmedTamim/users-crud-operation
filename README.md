@@ -33,12 +33,21 @@ npm install
 cp .env.example .env
 
 # Update .env with your database credentials
-# DATABASE_URL=postgresql://user:password@localhost:5432/crud_db
+# CONNECTION_STRING=postgresql://user:password@localhost:5432/crud_db
 # PORT=5000
 # JWT_SECRET=your_secret_key_here
 
+# Build the project
+npm run build
+
 # Start development server
 npm run dev
+```
+
+**For production**, use:
+```bash
+npm run build     # Builds TypeScript → JavaScript (dist/server.js)
+npm start         # Runs the production build
 ```
 
 Server runs on `http://localhost:5000` by default.
@@ -773,16 +782,50 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ## 🚀 Running the Project
 
+### Development Mode
 ```bash
-# Development mode (with live reload)
+# Start development server with auto-reload
 npm run dev
 
-# Build for production
+# This runs: tsx watch ./src/server.ts
+# Auto-restarts on file changes
+```
+
+### Production Mode
+```bash
+# Build TypeScript to JavaScript
 npm run build
 
-# Start production build
+# Run production build
 npm start
+
+# This runs: node dist/server.js
 ```
+
+### Build Output
+- **Source**: `src/` directory (TypeScript)
+- **Compiled**: `dist/` directory (JavaScript)
+- **Build Tool**: `tsup` (configured in `tsup.config.ts`)
+- **Command**: `npm run build` generates optimized production bundle
+
+---
+
+## 🚀 Deployment
+
+### Quick Deploy to Vercel
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Login to Vercel
+vercel login
+
+# Deploy to production
+vercel --prod
+```
+
+See **[Deployment with Vercel](#-deployment-with-vercel)** section above for detailed instructions.
 
 ---
 
@@ -832,6 +875,170 @@ REFRESH_TOKEN_EXPIRY=7d
 - **Authentication**: JWT (jsonwebtoken)
 - **Password Hashing**: bcryptjs
 - **Runtime**: Node.js
+- **Build Tool**: tsup (TypeScript bundler)
+- **Deployment**: Vercel
+
+---
+
+## 🚀 Deployment with Vercel
+
+### Project Structure for Deployment
+```
+user-crud-operation/
+├── src/
+├── dist/                      # Compiled JavaScript (created during build)
+├── package.json
+├── tsconfig.json
+├── tsup.config.ts             # TypeScript bundler config
+├── vercel.json                # Vercel deployment config
+└── .env.local                 # Local environment variables
+```
+
+### Build & Deployment Scripts
+
+**package.json Scripts:**
+```json
+{
+  "scripts": {
+    "start": "node dist/server.js",    # Run production build
+    "dev": "tsx watch ./src/server.ts", # Development with auto-reload
+    "build": "tsup",                   # Build with tsup
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
+```
+
+### Build Configuration (tsup.config.ts)
+
+The project uses **tsup** for efficient TypeScript compilation:
+
+```typescript
+import { defineConfig } from "tsup";
+
+export default defineConfig({
+  entry: ["src/server.ts"],         // Entry point
+  format: ["esm"],                  // ES Module format
+  target: "esnext",                 // Modern JavaScript
+  outDir: "dist",                   // Output directory
+  clean: true,                      // Clean dist before build
+  bundle: true,                     // Bundle dependencies
+  splitting: false,                 // Single output file
+  sourcemap: true,                  // Source maps for debugging
+  banner: {
+    js: `
+      import { createRequire } from 'module';
+      const require = createRequire(import.meta.url);
+    `, // CJS shim for ESM compatibility
+  },
+});
+```
+
+### Vercel Deployment Configuration (vercel.json)
+
+```json
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "dist/server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "dist/server.js"
+    }
+  ]
+}
+```
+
+### Deploy to Vercel
+
+#### **Method 1: Using Vercel CLI**
+
+```bash
+# Install Vercel CLI globally
+npm i -g vercel
+
+# Login to Vercel (creates .vercel folder with credentials)
+vercel login
+
+# Deploy to production
+vercel --prod
+
+# Deploy to preview (staging)
+vercel
+```
+
+#### **Method 2: Using GitHub Integration** (Recommended)
+
+1. Push your code to GitHub
+2. Go to [vercel.com](https://vercel.com)
+3. Import your GitHub repository
+4. Vercel automatically deploys on every push
+5. Set environment variables in Vercel dashboard:
+   - `CONNECTION_STRING`
+   - `JWT_SECRET`
+   - `JWT_REFRESH_SECRET`
+   - `ACCESS_TOKEN_EXPIRY`
+   - `REFRESH_TOKEN_EXPIRY`
+   - `PORT` (optional, Vercel assigns automatically)
+
+### Environment Variables on Vercel
+
+Set these in the Vercel Dashboard under **Settings → Environment Variables**:
+
+```env
+CONNECTION_STRING=postgresql://user:password@host:5432/crud_db
+JWT_SECRET=your_strong_access_token_secret_key
+JWT_REFRESH_SECRET=your_strong_refresh_token_secret_key
+ACCESS_TOKEN_EXPIRY=1d
+REFRESH_TOKEN_EXPIRY=7d
+```
+
+### Build & Deployment Flow
+
+```
+1. Commit & Push to GitHub
+        ↓
+2. Vercel detects changes
+        ↓
+3. Vercel runs: npm run build
+        ↓
+4. tsup compiles src/server.ts → dist/server.js
+        ↓
+5. Vercel deploys dist/server.js
+        ↓
+6. Your API is live at: https://your-project.vercel.app
+```
+
+### Production Checklist
+
+- [ ] Database connection string is set in Vercel environment variables
+- [ ] JWT secrets are different from development
+- [ ] Set `secure: true` for cookies in production
+- [ ] Update CORS origin to your frontend URL
+- [ ] Test all API endpoints after deployment
+- [ ] Enable HTTPS (automatic with Vercel)
+- [ ] Set up monitoring/logging
+
+### Troubleshooting Deployments
+
+**Issue: "Cannot find module 'server.js'"**
+- Solution: Run `npm run build` locally to test build process
+- Check that `dist/server.js` exists after build
+
+**Issue: "Module not found" errors**
+- Solution: Ensure all dependencies are in `package.json` (not `package-lock.json`)
+- Run `npm install` before deploying
+
+**Issue: Environment variables not loading**
+- Solution: Add variables to Vercel dashboard, NOT in `.vercel.json`
+- Restart deployment after adding variables
+
+**Issue: CORS errors**
+- Solution: Update `corsOptions.origin` in `src/app.ts` to match frontend URL
 
 ---
 
@@ -853,6 +1060,9 @@ REFRESH_TOKEN_EXPIRY=7d
 - [x] Standardized API response format
 - [x] User activation status check
 - [x] Cookie security (HttpOnly, SameSite, Secure flags)
+- [x] **TypeScript compilation with tsup**
+- [x] **Vercel deployment configuration**
+- [x] **Production build process**
 
 ### 🔄 Future Enhancements
 - [ ] Add logout endpoint (token blacklist/revocation)
@@ -868,6 +1078,7 @@ REFRESH_TOKEN_EXPIRY=7d
 - [ ] Add profile image upload capability
 - [ ] Implement soft delete for users
 - [ ] Add token blacklist for logout
+- [ ] Add CI/CD pipeline (GitHub Actions)
 
 ---
 
