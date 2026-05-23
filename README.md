@@ -56,6 +56,7 @@ Server runs on `http://localhost:5000` by default.
 | `jsonwebtoken` | ^9.0.3 | JWT token generation & verification |
 | `dotenv` | ^17.4.2 | Load environment variables |
 | `cors` | ^2.8.5 | Cross-Origin Resource Sharing |
+| `cookie-parser` | ^1.4.6 | Parse HTTP request cookies |
 
 ### Development Dependencies
 | Package | Version | Purpose |
@@ -69,7 +70,7 @@ Server runs on `http://localhost:5000` by default.
 
 ### Installation Command
 ```bash
-npm install express pg bcryptjs jsonwebtoken dotenv cors
+npm install express pg bcryptjs jsonwebtoken dotenv cors cookie-parser
 npm install -D typescript tsx @types/express @types/pg @types/jsonwebtoken @types/cors
 ```
 
@@ -248,23 +249,42 @@ const logger = (req: Request, res: Response, next: NextFunction) => {
 - Handles cascading deletes (profiles deleted when user is deleted)
 
 ### 6. **Express App** (`src/app.ts`)
-- Middleware setup (JSON parsing, CORS, logging, error handling)
-- Request logger middleware logs all API calls
-- Global error handler catches application errors
+- Middleware setup with proper order:
+  1. JSON/URL-encoded parsing
+  2. CORS configuration
+  3. Request logging
+  4. Cookie parsing (for refresh tokens)
+  5. Routes
+  6. Global error handler
+- CORS enabled for frontend communication (configurable origin)
+- Cookie middleware for HTTP-only cookie handling
 - Routes mounted:
   - `/api/users` - User CRUD operations
-  - `/api/auth` - Authentication (register/login)
+  - `/api/auth` - Authentication (register/login/refresh-token)
   - `/api/profile` - User profiles
+
+**CORS Configuration**
+```typescript
+const corsOptions = {
+  origin: "http://localhost:5173", // Frontend URL (update as needed)
+  optionsSuccessStatus: 200,
+  credentials: true // Allow cookies in cross-origin requests
+};
+
+app.use(cors(corsOptions));
+```
 
 **Middleware Order**
 ```typescript
 app.use(express.json());                      // Parse JSON
 app.use(express.urlencoded({ extended: true })); // Parse form data
+app.use(cors(corsOptions));                   // CORS
 app.use(logger);                              // Log requests
-app.use(globalErrorHandler);                  // Handle errors
+app.use(CookieParser());                      // Parse cookies
 app.use("/api/users", userRoute);             // User routes
-app.use("/api/auth", authRoute);              // Auth routes
 app.use("/api/profile", profileRoute);        // Profile routes
+app.use("/api/auth", authRoute);              // Auth routes
+app.use(globalErrorHandler);                  // Error handling
 ```
 
 ### 7. **User Module** (`src/modules/user/`)
@@ -297,26 +317,102 @@ interface IUser {
 ```
 
 ### 8. **Auth Module** (`src/modules/auth/`)
-**Registration (`POST /api/auth/register`)**
+
+#### **Token System**
+The application uses a **dual-token system** for enhanced security:
+
+**Access Token (Short-lived)**
+- Expiration: 1 day
+- Stored in: Response body
+- Usage: Sent in Authorization header for protected routes
+- Purpose: Grants temporary access to API resources
+
+**Refresh Token (Long-lived)**
+- Expiration: 7 days
+- Stored in: HTTP-only cookie (secure & inaccessible to JavaScript)
+- Usage: Used to generate new access tokens
+- Purpose: Allows user to stay logged in without re-entering credentials
+
+#### **Registration (`POST /api/auth/register`)**
 - Validates email uniqueness
-- Hashes password with bcryptjs
+- Hashes password with bcryptjs (12 salt rounds)
 - Creates user in database
+- Generates both access and refresh tokens
+- Stores refresh token in HTTP-only cookie
 - Returns JWT token + user data (password excluded)
 
-**Login (`POST /api/auth/login`)**
+```json
+Response {
+  "success": true,
+  "message": "Registration successful",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIs...",
+    "user": { ... }
+  },
+  "Set-Cookie": "refreshToken=eyJhbGciOiJIUzI1NiIs...; HttpOnly; SameSite=lax"
+}
+```
+
+#### **Login (`POST /api/auth/login`)**
 - Finds user by email
 - Compares password with bcrypt
-- Generates JWT token (1-day expiration)
-- Returns token without password
+- Generates both access and refresh tokens
+- Stores refresh token in HTTP-only cookie
+- Returns tokens without password
 
-**JWT Payload**
+```json
+Response {
+  "success": true,
+  "message": "Login successfully!",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
+  }
+}
+```
+
+#### **Refresh Token (`POST /api/auth/refresh-token`)**
+- Retrieves refresh token from HTTP-only cookie
+- Verifies token signature
+- Fetches user from database
+- Checks if user is still active
+- Generates new access token
+- Returns new access token
+
+```json
+Request: {
+  "Cookie": "refreshToken=eyJhbGciOiJIUzI1NiIs..."
+}
+
+Response: {
+  "success": true,
+  "message": "Access token generated successfully",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIs..."
+  }
+}
+```
+
+#### **JWT Payload** (in both tokens)
 ```typescript
 {
   id: number,
   name: string,
   email: string,
+  role: string,
   is_active: boolean
 }
+```
+
+#### **Cookie Security Settings**
+```typescript
+res.cookie("refreshToken", refreshToken, {
+  secure: false,        // Set to true in production (HTTPS only)
+  httpOnly: true,       // Prevents JavaScript access (XSS protection)
+  sameSite: "lax",      // CSRF protection (adjust based on needs)
+  maxAge: 7 * 24 * 60 * 60 * 1000  // 7 days
+});
 ```
 
 ---
@@ -373,7 +469,8 @@ interface IUser {
 | Method | Endpoint | Description | Protection |
 |--------|----------|-------------|-----------|
 | POST | `/api/auth/register` | Register new user | Public |
-| POST | `/api/auth/login` | Login user | Public |
+| POST | `/api/auth/login` | Login user & get tokens | Public |
+| POST | `/api/auth/refresh-token` | Generate new access token | Refresh Token Cookie |
 
 ### Profiles
 | Method | Endpoint | Description | Protection |
@@ -405,7 +502,88 @@ router.put("/:id", auth("admin", "agent"), userController.updateUser);
 
 ---
 
-## � Protected Routes with Authentication
+## 🔑 Token Management & Flow
+
+### Complete Token Lifecycle
+
+```
+1. User Registers/Logs In
+        ↓
+2. Server generates Access Token (1d) + Refresh Token (7d)
+        ↓
+3. Access Token → Response body (for API requests)
+4. Refresh Token → HTTP-only Cookie (for token refresh)
+        ↓
+5. Client uses Access Token in Authorization header
+        ↓
+6. After 1 day (Access Token expires)
+        ↓
+7. Client calls /refresh-token endpoint
+        ↓
+8. Server validates Refresh Token from cookie
+        ↓
+9. Server returns new Access Token
+        ↓
+10. Client continues using API with new token
+```
+
+### How to Use Tokens
+
+#### **1. Login and Get Tokens**
+```bash
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password123"}' \
+  -c cookies.txt
+```
+
+Response includes:
+- `accessToken` in body (use immediately)
+- `refreshToken` in HTTP-only cookie (stored automatically if using browser/cookies)
+
+#### **2. Use Access Token for Protected Routes**
+```bash
+curl -X GET http://localhost:5000/api/users \
+  -H "Authorization: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+#### **3. Refresh Access Token (After Expiry)**
+```bash
+curl -X POST http://localhost:5000/api/auth/refresh-token \
+  -b cookies.txt
+```
+
+Response:
+```json
+{
+  "success": true,
+  "message": "Access token generated successfully",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}
+```
+
+### Token Security Best Practices
+
+✅ **Access Token**
+- Keep short-lived (1 day)
+- Store in memory or response body
+- Include in every API request
+
+✅ **Refresh Token**
+- Keep long-lived (7+ days)
+- Store in HTTP-only cookie (not localStorage)
+- Never expose to JavaScript
+- Only used to refresh access token
+
+✅ **Prevention Mechanisms**
+- **XSS Protection**: HTTP-only cookies prevent JavaScript theft
+- **CSRF Protection**: SameSite=lax prevents cross-site requests
+- **Token Rotation**: New access token on each refresh
+- **User Verification**: Check user is still active on refresh
+
+---
 
 ### How to Use the Auth Middleware
 
@@ -530,20 +708,46 @@ POST /api/auth/login
 }
 ```
 
-**Response (200)**
+**Response (200)** - Includes both tokens
 ```json
 {
   "success": true,
   "message": "Login successfully!",
   "data": {
-    "accessToken": "eyJhbGc..."
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJqb2huQGV4YW1wbGUuY29tIn0...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJqb2huQGV4YW1wbGUuY29tIn0..."
   }
 }
 ```
 
-### Get All Users
+**Cookies Set Automatically:**
+```
+Set-Cookie: refreshToken=eyJhbGc...; HttpOnly; SameSite=lax
+```
+
+### Refresh Access Token
+```bash
+POST /api/auth/refresh-token
+
+# Refresh token is sent automatically in cookies if using browser
+# Or include the cookie header if using curl
+```
+
+**Response (201)** - New access token
 ```json
+{
+  "success": true,
+  "message": "Access token generated successfully",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJqb2huQGV4YW1wbGUuY29tIn0..."
+  }
+}
+```
+
+### Get All Users (Protected - Requires Access Token)
+```bash
 GET /api/users
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 **Response (200)** - ✅ No passwords returned
@@ -593,9 +797,20 @@ CONNECTION_STRING=postgresql://user:password@localhost:5432/crud_db
 # Server
 PORT=5000
 
-# JWT
-JWT_SECRET=your_super_secret_key_here_change_in_production
+# JWT Access Token (short-lived)
+JWT_SECRET=your_access_token_secret_key_here_change_in_production
+ACCESS_TOKEN_EXPIRY=1d
+
+# JWT Refresh Token (long-lived)
+JWT_REFRESH_SECRET=your_refresh_token_secret_key_here_change_in_production
+REFRESH_TOKEN_EXPIRY=7d
 ```
+
+**Security Tips:**
+- Use **different secrets** for access and refresh tokens
+- Generate strong random secrets (min 32 characters)
+- Never commit `.env` file to Git
+- Use environment-specific secrets in production
 
 ---
 
@@ -625,6 +840,9 @@ JWT_SECRET=your_super_secret_key_here_change_in_production
 ### ✅ Implemented
 - [x] User CRUD operations
 - [x] User authentication (register/login)
+- [x] **Dual-token system** (Access + Refresh tokens)
+- [x] **Token refresh endpoint** to generate new access tokens
+- [x] **HTTP-only cookies** for secure token storage
 - [x] Role-Based Access Control (RBAC)
 - [x] JWT token generation & verification
 - [x] Password hashing with bcryptjs
@@ -634,10 +852,11 @@ JWT_SECRET=your_super_secret_key_here_change_in_production
 - [x] Request logging middleware
 - [x] Standardized API response format
 - [x] User activation status check
+- [x] Cookie security (HttpOnly, SameSite, Secure flags)
 
 ### 🔄 Future Enhancements
-- [ ] Add refresh token mechanism
-- [ ] Implement email verification
+- [ ] Add logout endpoint (token blacklist/revocation)
+- [ ] Implement email verification on registration
 - [ ] Add password reset functionality
 - [ ] Add API rate limiting
 - [ ] Add request validation middleware
@@ -648,6 +867,7 @@ JWT_SECRET=your_super_secret_key_here_change_in_production
 - [ ] Add two-factor authentication (2FA)
 - [ ] Add profile image upload capability
 - [ ] Implement soft delete for users
+- [ ] Add token blacklist for logout
 
 ---
 
