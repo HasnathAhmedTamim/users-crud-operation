@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { pool } from "../../db";
 import type { IAuth, IRegister } from "./auth.interface";
-import jwt from "jsonwebtoken";
+import jwt, { type JwtPayload } from "jsonwebtoken";
 import config from "../../config";
 
 // Login User into DB
@@ -122,7 +122,52 @@ const registerUserIntoDB = async (payload: IRegister) => {
   };
 };
 
+const generateRefreshToken = async (token: string) => {
+  if (!token) {
+    throw new Error("Unauthorized");
+  }
+
+  const decodeToken = jwt.verify(
+    token as string,
+    config.refresh_secretKey as string,
+  ) as JwtPayload;
+  // console.log(decodeToken);
+
+  const userData = await pool.query(
+    `
+        SELECT * FROM users
+        WHERE email = $1
+        `,
+    [decodeToken.email],
+  );
+
+  // console.log(userData.rows[0]);
+
+  const user = userData.rows[0];
+  if (userData.rowCount === 0) {
+    throw new Error("User not found");
+  }
+
+  if (!user?.is_active) {
+    throw new Error("User is not active");
+  }
+
+  const jwtpayload = {
+    id: user.id,
+    name: user.name,
+    role: user.role,
+    is_active: user.is_active,
+    email: user.email,
+  };
+  const accessToken = jwt.sign(jwtpayload, config.secretKey as string, {
+    expiresIn: "1d",
+  });
+
+  return { accessToken };
+};
+
 export const authService = {
   loginUserIntoDB,
   registerUserIntoDB,
+  generateRefreshToken,
 };

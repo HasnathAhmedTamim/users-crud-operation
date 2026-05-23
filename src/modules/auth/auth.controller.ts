@@ -52,7 +52,30 @@ const registerUser = async (req: Request, res: Response) => {
     });
   }
 };
+
+const refreshToken = async (req: Request, res: Response) => {
+  // console.log("This is refresh token ", req.cookies.refreshToken);
+  try {
+    const result = await authService.generateRefreshToken(
+      req.cookies.refreshToken,
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: "Access token generated successfully",
+      data: result,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+      error: error,
+    });
+  }
+};
+
 export const authController = {
   loginUser,
   registerUser,
+  refreshToken,
 };
