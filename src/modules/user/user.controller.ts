@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { pool } from "../../db";
 import { userService } from "./user.service";
+import sendResponse from "../../utility/sendResponse";
 
 const createUser = async (req: Request, res: Response) => {
   // const { name, email, password, age } = req.body;
@@ -8,13 +9,15 @@ const createUser = async (req: Request, res: Response) => {
   try {
     const result = await userService.createUserIntoDB(req.body);
 
-    return res.status(201).json({
+    sendResponse(res, {
+      statusCode: 201,
       success: true,
       message: "User created successfully",
       data: result.rows[0],
     });
   } catch (error: any) {
-    return res.status(500).json({
+    sendResponse(res, {
+      statusCode: 500,
       success: false,
       message: error.message,
       error: error,
@@ -26,13 +29,15 @@ const getAllUsers = async (req: Request, res: Response) => {
   try {
     const result = await userService.getAllUsersFromDB();
 
-    return res.status(200).json({
+    sendResponse(res, {
+      statusCode: 200,
       success: true,
       message: "Users retrieved successfully",
       data: result.rows,
     });
   } catch (error: any) {
-    return res.status(500).json({
+    sendResponse(res, {
+      statusCode: 500,
       success: false,
       message: error.message,
       error: error,
@@ -46,20 +51,23 @@ const getSingleUser = async (req: Request, res: Response) => {
   try {
     const result = await userService.getSingleUserFromDB(id as string);
     if (result.rows.length === 0) {
-      return res.status(404).json({
+      return sendResponse(res, {
+        statusCode: 404,
         success: false,
         message: "User not found",
         data: {},
       });
     }
 
-    return res.status(200).json({
+    return sendResponse(res, {
+      statusCode: 200,
       success: true,
       message: "User retrieved successfully",
       data: result.rows[0],
     });
   } catch (error: any) {
-    return res.status(500).json({
+    return sendResponse(res, {
+      statusCode: 500,
       success: false,
       message: error.message,
       error: error,
@@ -75,20 +83,23 @@ const updateUser = async (req: Request, res: Response) => {
     const result = await userService.updateUserInDB(req.body, id as string);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
+      return sendResponse(res, {
+        statusCode: 404,
         success: false,
         message: "User not found",
         data: {},
       });
     }
 
-    return res.status(200).json({
+    return sendResponse(res, {
+      statusCode: 200,
       success: true,
       message: "User updated successfully",
       data: result.rows[0],
     });
   } catch (error: any) {
-    return res.status(500).json({
+    return sendResponse(res, {
+      statusCode: 500,
       success: false,
       message: error.message,
       error: error,
@@ -103,20 +114,23 @@ const deleteUser = async (req: Request, res: Response) => {
     const result = await userService.deleteUserFromDB(id as string);
 
     if (result.rowCount === 0) {
-      return res.status(404).json({
+      return sendResponse(res, {
+        statusCode: 404,
         success: false,
         message: "User not found",
         data: {},
       });
     }
 
-    return res.status(200).json({
+    return sendResponse(res, {
+      statusCode: 200,
       success: true,
       message: "User deleted successfully",
       data: result.rows[0],
     });
   } catch (error: any) {
-    return res.status(500).json({
+    return sendResponse(res, {
+      statusCode: 500,
       success: false,
       message: error.message,
       error: error,
