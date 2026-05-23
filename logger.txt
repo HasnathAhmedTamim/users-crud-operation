@@ -37,3 +37,4 @@
 2026-05-23T02:43:27.799Z - GET /api/users
 2026-05-23T02:43:56.527Z - GET /api/users
 2026-05-23T02:43:57.027Z - GET /favicon.ico
+2026-05-23T02:58:08.552Z - POST /api/auth/login

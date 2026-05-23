@@ -6,6 +6,13 @@ import { authService } from "./auth.service";
 const loginUser = async (req: Request, res: Response) => {
   try {
     const result = await authService.loginUserIntoDB(req.body);
+    const { accessToken, refreshToken } = result;
+
+    res.cookie("refreshToken", refreshToken, {
+      secure: false, // Set to true in production (requires HTTPS)
+      httpOnly: true, // Prevents JavaScript access to the cookie
+      sameSite: "lax", // Adjust based on your needs (e.g., "lax" or "none")
+    });
 
     res.status(201).json({
       success: true,
@@ -21,10 +28,16 @@ const loginUser = async (req: Request, res: Response) => {
   }
 };
 
-
 const registerUser = async (req: Request, res: Response) => {
   try {
     const result = await authService.registerUserIntoDB(req.body);
+
+    const { accessToken, refreshToken } = result;
+    res.cookie("refreshToken", refreshToken, {
+      secure: false, // Set to true in production (requires HTTPS)
+      httpOnly: true, // Prevents JavaScript access to the cookie
+      sameSite: "lax", // Adjust based on your needs (e.g., "lax" or "none")
+    });
 
     return res.status(201).json({
       success: true,
