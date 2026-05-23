@@ -13,12 +13,22 @@ import { authRoute } from "./modules/auth/auth.route";
 import fs from "fs";
 import logger from "./modules/middleware/logger";
 import CookieParser from "cookie-parser";
+import cors from "cors";
+import globalErrorHandler from "./modules/middleware/globalErrorHandler";
+
 const app: Application = express();
 
 // Middleware to parse JSON, URL-encoded data, and plain text
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.text());
+
+const corsOptions = {
+  origin: "http://localhost:5173", // Replace with your frontend URL
+  optionsSuccessStatus: 200, // For legacy browser support
+};
+
+app.use(cors(corsOptions));
 
 // MiddleWare
 app.use(logger);
@@ -38,5 +48,7 @@ app.get("/", (req: Request, res: Response) => {
 app.use("/api/users", userRoute);
 app.use("/api/profile", profileRoute);
 app.use("/api/auth", authRoute);
+
+app.use(globalErrorHandler);
 
 export default app;
